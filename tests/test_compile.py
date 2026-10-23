@@ -106,3 +106,42 @@ def test_undefined_import_curly_name():
     # that `{bad}` is being interpreted as an f-string. It must be escaped.
     with pytest.raises(UndefinedError):
         env.get_template("{bad}").render()
+
+
+def test_constant_folding_does_not_rewalk_subtrees(monkeypatch):
+    # Folding used to call as_const() on every node of a long expression,
+    # and each call walked the whole subtree below it again, which made
+    # compiling ``x + 1 + 1 + ...`` cubic in the length of the chain.
+    from jinja2 import nodes
+
+    calls = 0
+    original = nodes.BinExpr.as_const
+
+    def counting_as_const(self, eval_ctx=None):
+        nonlocal calls
+        calls += 1
+        return original(self, eval_ctx)
+
+    monkeypatch.setattr(nodes.BinExpr, "as_const", counting_as_const)
+    n = 150
+    # raw=True: the generated Python would exceed CPython's nesting limit.
+    Environment().compile("{{ " + " + ".join(["x"] + ["1"] * n) + " }}", raw=True)
+    assert calls < n * n
+
+
+@pytest.mark.parametrize(
+    ("source", "expect"),
+    [
+        ("{{ 0 and x }}", "0"),
+        ("{{ 1 or x }}", "1"),
+        ("{{ 'a' if 1 else x }}", "a"),
+        ("{{ x if 0 else 'b' }}", "b"),
+        ("{{ 1 > 2 < x }}", "False"),
+    ],
+)
+def test_constant_folding_short_circuit(source, expect):
+    # Operands that are never evaluated don't prevent folding.
+    env = Environment()
+    code = env.compile(source, raw=True)
+    assert f"yield {expect!r}" in code
+    assert env.from_string(source).render() == expect

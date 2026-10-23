@@ -13,6 +13,9 @@ Unreleased
 -   Use modern packaging metadata with ``pyproject.toml`` instead of ``setup.cfg``.
     :pr:`1793`
 -   Use ``flit_core`` instead of ``setuptools`` as build backend.
+-   Constant folding no longer re-evaluates whole subtrees at every node,
+    which made compiling long expressions such as ``x + 1 + 1 + ...``
+    take time cubic in their length. :issue:`2283`
 
 
 Version 3.1.6
